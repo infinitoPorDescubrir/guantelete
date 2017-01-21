@@ -31,8 +31,8 @@ Cortito y al pie
 Notas a MIDI:
 -------------
 
-   D2   38
-   F2   41
-   G2   43
-   A2   45  ( 110hz)
-   C3   48
+    D2   38
+    F2   41
+    G2   43
+    A2   45  ( 110hz)
+    C3   48
