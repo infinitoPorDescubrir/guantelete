@@ -1,5 +1,6 @@
 #include <avr/io.h> 
 #include <avr/interrupt.h> 
+#include <EEPROM.h>
 
 uint16_t syncPhaseAcc; 
 uint16_t syncPhaseInc; 
@@ -100,21 +101,40 @@ void audioOn() {
   TIMSK2 = _BV(TOIE2);
 } 
 
-void setup() { 
-  pinMode(PWM_PIN,OUTPUT); 
-  pinMode(PULSE_PIN,OUTPUT);
-  digitalWrite(PULSE_PIN, 0);
-  audioOn(); 
-  Serial.begin(9600);
-} 
+#define PATCH_COUNT 4
+byte patchIndex = 0;
 
-
-int patches[][4][2]={
+int patches[PATCH_COUNT][4][2]={
     {{0,363},{572,237},{158,366},{9,0}},
     {{0,0},{148,149},{392,120},{7,12}},
     {{589,65},{0,0},{851,855},{729,356}},
     {{405,0},{25,25},{0,0},{342,342}}
   };
+
+void initPatch(){
+  int addr = 0;
+
+  // read patchIndex from EEPROM
+  byte i = EEPROM.read(addr);
+  //ensure bounds
+  i %= PATCH_COUNT;
+  patchIndex = i;
+
+  //move to next patch for next run
+  EEPROM.write(addr, (i+1));
+
+}
+
+
+void setup() { 
+  pinMode(PWM_PIN,OUTPUT); 
+  pinMode(PULSE_PIN,OUTPUT);
+  digitalWrite(PULSE_PIN, 0);
+  audioOn(); 
+  initPatch();
+  Serial.begin(9600);
+} 
+
 
 bool debug = 0;
 
@@ -170,10 +190,10 @@ void loop() {
   }else{
     uint16_t ctrl = analogRead(GRAIN_FREQ_CONTROL); 
   
-    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[0][0][0],patches[0][0][1]); 
-    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[0][1][0],patches[0][1][1]); 
-    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[0][2][0],patches[0][2][1]); 
-    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[0][3][0],patches[0][3][1]); 
+    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
+    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
+    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
+    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
 
     grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
     grainDecay     = gDecayCtrl / 8; 
