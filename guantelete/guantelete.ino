@@ -88,11 +88,6 @@ void loop2() {
 }
 */
 
-uint16_t grainFreqCtrl; 
-uint16_t grainDecayCtrl; 
-uint16_t grain2FreqCtrl; 
-uint16_t grain2DecayCtrl; 
-
 
 void audioOn() { 
   // Set up PWM to 31.25kHz, phase accurate 
@@ -132,11 +127,8 @@ void setup() {
   digitalWrite(PULSE_PIN, 0);
   audioOn(); 
   initPatch();
-  Serial.begin(9600);
 } 
 
-
-bool debug = 0;
 
 int index = 0;
 long lastMillis = 0;
@@ -156,60 +148,20 @@ void loop() {
     lastMillis = curMillis;
   }
 
+  uint16_t ctrl = analogRead(GRAIN_FREQ_CONTROL); 
 
+  uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
+  uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
+  uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
+  uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
 
-
-  if(debug){
-    uint16_t gFreqCtrl = analogRead(GRAIN_FREQ_CONTROL); 
-    uint16_t gDecayCtrl= analogRead(GRAIN_DECAY_CONTROL); 
-    uint16_t g2FreqCtrl = analogRead(GRAIN2_FREQ_CONTROL); 
-    uint16_t g2DecayCtrl = analogRead(GRAIN2_DECAY_CONTROL); 
-  
-    if(    (diff(gFreqCtrl,grainFreqCtrl)>10) 
-        || (diff(gDecayCtrl,grainDecayCtrl)>10 )
-        || (diff(g2FreqCtrl,grain2FreqCtrl)>10)
-        || (diff(g2DecayCtrl,grain2DecayCtrl)>10) ){
-      grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
-      grainFreqCtrl = gFreqCtrl;
-      grainDecay     = gDecayCtrl / 8; 
-      grainDecayCtrl = gDecayCtrl;
-      grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
-      grain2FreqCtrl = g2FreqCtrl;
-      grain2Decay     = g2DecayCtrl / 4; 
-      grain2DecayCtrl = g2DecayCtrl;
-      Serial.print("F ");
-      Serial.print(grainFreqCtrl);
-      Serial.print(" D ");
-      Serial.print(grainDecayCtrl);
-      Serial.print("  F2 ");
-      Serial.print(grain2FreqCtrl);
-      Serial.print("  D2 ");
-      Serial.println(grain2DecayCtrl);
-    }
-  
-  }else{
-    uint16_t ctrl = analogRead(GRAIN_FREQ_CONTROL); 
-  
-    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
-    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
-    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
-    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
-
-    grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
-    grainDecay     = gDecayCtrl / 8; 
-    grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
-    grain2Decay     = g2DecayCtrl / 4; 
-
-
-  };
-
-  
+  grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
+  grainDecay     = gDecayCtrl / 8; 
+  grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
+  grain2Decay     = g2DecayCtrl / 4; 
   
 } 
 
-uint16_t diff(uint16_t a, uint16_t  b){
-  return (a > b) ? a - b : b - a;
-}
 
 
 
