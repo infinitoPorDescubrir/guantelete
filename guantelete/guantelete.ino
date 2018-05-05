@@ -50,44 +50,10 @@ uint16_t midiTable[] = {
 }; 
 
 
-int pines[] = {1,2,3,4};
-int estadoPines[] = {1,1,1,1};
-int antirebotes[] = {0,0,0,0};
-
-/*
-Notas a MIDI:
--------------
-    F2   41
-    G2   43
-    A2   45  ( 110hz)
-*/
-int notas[] = {36,36,41,43,46,48,51};
-
-/*
-void setup2() {
-  for(int i=0;i<4;i++){
-    pinMode(pines[i], INPUT_PULLUP);
-  }
-}
-
-void loop2() {
-  
-  for(int i=0;i<4;i++){
-    int nuevoEstadoPin = digitalRead(pines[i]);
-    if (estadoPines[i] != nuevoEstadoPin ){
-      antirebotes[i] = antirebotes[i] + 1;
-      if(antirebotes[i] > 200 ){
-        estadoPines[i] = nuevoEstadoPin;
-        antirebotes[i] = 0;
-      }
-    }else{
-        antirebotes[i]= 0;
-    }
-  }
-
-}
-*/
-
+int pines[] = {1,2,4};
+int estadoPines[] = {1,1,1};
+int antirebotes[] = {0,0,0};
+int notas[] = {51,48,46,43,41,39,36,0}; //last index is silence
 
 void audioOn() { 
   // Set up PWM to 31.25kHz, phase accurate 
@@ -123,32 +89,40 @@ void initPatch(){
 
 void setup() { 
   pinMode(PWM_PIN,OUTPUT); 
-  pinMode(PULSE_PIN,OUTPUT);
-  digitalWrite(PULSE_PIN, 0);
   audioOn(); 
   initPatch();
+  for(int i=0;i<3;i++){
+    pinMode(pines[i], INPUT_PULLUP);
+  }
+
 } 
 
 
-int index = 0;
-long lastMillis = 0;
-
 void loop() { 
 
-  long curMillis = millis();
-  if((curMillis-lastMillis)>500){
-    if(syncPhaseInc >0){
-      syncPhaseInc =0;
+  for(int i=0;i<3;i++){
+    int nuevoEstadoPin = digitalRead(pines[i]);
+    if (estadoPines[i] != nuevoEstadoPin ){
+      antirebotes[i] = antirebotes[i] + 1;
+      if(antirebotes[i] > 150 ){
+        estadoPines[i] = nuevoEstadoPin;
+        antirebotes[i] = 0;
+      }
     }else{
-      syncPhaseInc = midiTable[notas[index]]; 
-      index++;
-      index %=7;
-
+        antirebotes[i]= 0;
     }
-    lastMillis = curMillis;
   }
 
-  uint16_t ctrl = analogRead(GRAIN_FREQ_CONTROL); 
+  int index = estadoPines[0]*4+estadoPines[1]*2+estadoPines[2];
+  int nota = notas[index];
+  if(nota==0){
+    syncPhaseInc =0;
+  }else{
+    syncPhaseInc = midiTable[nota]; 
+  }
+
+  
+  uint16_t ctrl = analogRead(A2); 
 
   uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
   uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
