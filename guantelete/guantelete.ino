@@ -2,6 +2,16 @@
 #include <avr/interrupt.h> 
 #include <EEPROM.h>
 
+int pines[] = {1,2,3};
+int estadoPines[] = {1,1,1};
+int antirebotes[] = {0,0,0};
+int notas[] = {308,259,231,194,173,154,129,0}; //last index is silence
+
+#define PWM_PIN   0
+#define PATCH_COUNT 4
+byte patchIndex = 0;
+
+
 uint16_t syncPhaseAcc; 
 uint16_t syncPhaseInc; 
 uint16_t grainPhaseAcc; 
@@ -13,16 +23,6 @@ uint16_t grain2PhaseInc;
 uint16_t grain2Amp; 
 uint8_t grain2Decay; 
 
-
-#define GRAIN_FREQ_CONTROL   (1) 
-#define GRAIN_DECAY_CONTROL  (2) 
-#define GRAIN2_FREQ_CONTROL  (3) 
-#define GRAIN2_DECAY_CONTROL (4) 
-#define PULSE_PIN       4 
-
-#define PWM_PIN       3 
-#define PWM_VALUE     OCR2B 
-#define PWM_INTERRUPT TIMER2_OVF_vect 
 
 // Smooth logarithmic mapping 
 // 
@@ -36,34 +36,6 @@ uint16_t mapPhaseInc(uint16_t input) {
   return (antilogTable[input & 0x3f]) >> (input >> 6); 
 } 
 
-// Stepped chromatic mapping 
-// 
-uint16_t midiTable[] = { 
-17,18,19,20,22,23,24,26,27,29,31,32,34,36,38,41,43,46,48,51,54,58,61,65,69,73, 
-77,82,86,92,97,103,109,115,122,129,137,145,154,163,173,183,194,206,218,231, 
-244,259,274,291,308,326,346,366,388,411,435,461,489,518,549,581,616,652,691, 
-732,776,822,871,923,978,1036,1097,1163,1232,1305,1383,1465,1552,1644,1742, 
-1845,1955,2071,2195,2325,2463,2610,2765,2930,3104,3288,3484,3691,3910,4143, 
-4389,4650,4927,5220,5530,5859,6207,6577,6968,7382,7821,8286,8779,9301,9854, 
-10440,11060,11718,12415,13153,13935,14764,15642,16572,17557,18601,19708,20879, 
-22121,23436,24830,26306 
-}; 
-
-
-int pines[] = {1,2,4};
-int estadoPines[] = {1,1,1};
-int antirebotes[] = {0,0,0};
-int notas[] = {51,48,46,43,41,39,36,0}; //last index is silence
-
-void audioOn() { 
-  // Set up PWM to 31.25kHz, phase accurate 
-  TCCR2A = _BV(COM2B1) | _BV(WGM20); 
-  TCCR2B = _BV(CS20); 
-  TIMSK2 = _BV(TOIE2);
-} 
-
-#define PATCH_COUNT 4
-byte patchIndex = 0;
 
 int patches[PATCH_COUNT][4][2]={
     {{0,363},{572,237},{158,366},{9,0}},
@@ -72,8 +44,25 @@ int patches[PATCH_COUNT][4][2]={
     {{405,0},{25,25},{0,0},{342,342}}
   };
 
+void setup() { 
+  pinMode(2,OUTPUT); 
+  pinMode(1,OUTPUT); 
+  pinMode(PWM_PIN,OUTPUT); 
+  setupTimer();
+  initPatch();
+  for(int i=0;i<3;i++){
+    //pinMode(pines[i], INPUT_PULLUP);
+  }
+
+} 
+
+
+
 void initPatch(){
   int addr = 0;
+
+  patchIndex = 1;
+  return;
 
   // read patchIndex from EEPROM
   byte i = EEPROM.read(addr);
@@ -87,18 +76,10 @@ void initPatch(){
 }
 
 
-void setup() { 
-  pinMode(PWM_PIN,OUTPUT); 
-  audioOn(); 
-  initPatch();
-  for(int i=0;i<3;i++){
-    pinMode(pines[i], INPUT_PULLUP);
-  }
 
-} 
-
-
+volatile long m = 0;
 void loop() { 
+
 
   for(int i=0;i<3;i++){
     int nuevoEstadoPin = digitalRead(pines[i]);
@@ -114,15 +95,13 @@ void loop() {
   }
 
   int index = estadoPines[0]*4+estadoPines[1]*2+estadoPines[2];
-  int nota = notas[index];
-  if(nota==0){
-    syncPhaseInc =0;
-  }else{
-    syncPhaseInc = midiTable[nota]; 
-  }
-
+  syncPhaseInc =notas[index];
   
   uint16_t ctrl = analogRead(A2); 
+
+  syncPhaseInc =notas[abs((m/10000)%8)];
+  ctrl = abs((m/1000)%1000-500);
+
 
   uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
   uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
@@ -137,12 +116,39 @@ void loop() {
 } 
 
 
+void setupTimer()
+{
+  //_BV(CTC1) |  | _BV(CS13)
+  //TCCR1 =  _BV(PWM1A) | _BV(COM1A0) | _BV(COM1A1) | _BV(CS10);
+  //TIMSK |= _BV(TOIE1); 
 
+  // connect pwm to pin on timer 1, channel A
+  //TCCR0A |=_BV(COM0A1);
+  //TCCR0A &=~_BV(COM0A0);
+  //OCR0A =  120;
 
-SIGNAL(PWM_INTERRUPT) 
-{ 
+  // connect pwm to pin on timer 1, channel A
+  //TCCR1 |=_BV(COM1A1);
+  //TCCR1 &=~_BV(COM1A0);
+  //OCR1A =  120;
+  analogWrite(1,120);
+
+  
+}
+
+/*
+volatile long l=0;
+
+// TIMER1 overflow interrupt service routine
+// called whenever TCNT1 overflows
+SIGNAL (TIMER1_OVF_vect)
+{
   uint8_t value; 
   uint16_t output; 
+
+
+    digitalWrite(2,(l/10000)%2);  
+    l++;
 
   syncPhaseAcc += syncPhaseInc; 
   if (syncPhaseAcc < syncPhaseInc) { 
@@ -151,6 +157,7 @@ SIGNAL(PWM_INTERRUPT)
     grainAmp = 0x7fff; 
     grain2PhaseAcc = 0; 
     grain2Amp = 0x7fff; 
+
   } 
 
   // Increment the phase of the grain oscillators 
@@ -177,8 +184,11 @@ SIGNAL(PWM_INTERRUPT)
   if (output > 255) output = 255; 
 
   // Output to PWM (this is faster than using analogWrite) 
-  PWM_VALUE = output; 
+  OCR0A =  output;
+
+  
 }
 
 
 
+*/
