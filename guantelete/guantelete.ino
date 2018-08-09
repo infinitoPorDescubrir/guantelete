@@ -2,44 +2,40 @@
 #include <avr/interrupt.h> 
 #include <EEPROM.h>
 
-int pines[] = {7,6,5,4};
+int pines[] = {7,6,5,3};
 int estadoPines[] = {1,1,1,1};
 int antirebotes[] = {0,0,0,0};
 int notas[] = {173,194,231,259,308};
 
-#define PWM_PIN       3
-#define PWM_VALUE     OCR2B
-#define PWM_INTERRUPT TIMER2_OVF_vect
-
+#define PWM_PIN       4
 
 #define PATCH_COUNT 4
 byte patchIndex = 0;
 
 
-uint16_t syncPhaseAcc; 
-uint16_t syncPhaseInc; 
-uint16_t grainPhaseAcc; 
-uint16_t grainPhaseInc; 
-uint16_t grainAmp; 
-uint8_t grainDecay; 
-uint16_t grain2PhaseAcc; 
-uint16_t grain2PhaseInc; 
-uint16_t grain2Amp; 
-uint8_t grain2Decay; 
+uint16_t syncPhaseAcc=0; 
+uint16_t syncPhaseInc=0; 
+uint16_t grainPhaseAcc=0; 
+uint16_t grainPhaseInc=0; 
+uint16_t grainAmp=0; 
+uint8_t grainDecay=0; 
+uint16_t grain2PhaseAcc=0; 
+uint16_t grain2PhaseInc=0; 
+uint16_t grain2Amp=0; 
+uint8_t grain2Decay=0; 
 
 
 // Smooth logarithmic mapping 
 // 
 uint16_t antilogTable[] = { 
-64830,64132,63441,62757,62081,61413,60751,60097,59449,58809,58176,57549,56929,56316,55709,55109, 
-54515,53928,53347,52773,52204,51642,51085,50535,49991,49452,48920,48393,47871,47356,46846,46341, 
-45842,45348,44859,44376,43898,43425,42958,42495,42037,41584,41136,40693,40255,39821,39392,38968, 
-38548,38133,37722,37316,36914,36516,36123,35734,35349,34968,34591,34219,33850,33486,33125,32768 
+  64830,64132,63441,62757,62081,61413,60751,60097,59449,58809,58176,57549,56929,56316,55709,55109, 
+  54515,53928,53347,52773,52204,51642,51085,50535,49991,49452,48920,48393,47871,47356,46846,46341, 
+  45842,45348,44859,44376,43898,43425,42958,42495,42037,41584,41136,40693,40255,39821,39392,38968, 
+  38548,38133,37722,37316,36914,36516,36123,35734,35349,34968,34591,34219,33850,33486,33125,32768 
 }; 
 uint16_t mapPhaseInc(uint16_t input) { 
   return (antilogTable[input & 0x3f]) >> (input >> 6); 
 } 
-
 
 int patches[PATCH_COUNT][4][2]={
     {{0,363},{572,237},{158,366},{9,0}},
@@ -48,111 +44,9 @@ int patches[PATCH_COUNT][4][2]={
     {{405,0},{25,25},{0,0},{342,342}}
   };
 
-void setup() { 
-  pinMode(PWM_PIN,OUTPUT);
-
-  setupTimer();
-  initPatch();
-  for(int i=0;i<4;i++){
-    pinMode(pines[i], INPUT_PULLUP);
-  }
-
-} 
 
 
-
-void initPatch(){
-  int addr = 0;
-
-  // read patchIndex from EEPROM
-  byte i = EEPROM.read(addr);
-  //ensure bounds
-  i %= PATCH_COUNT;
-  patchIndex = i;
-
-  //move to next patch for next run
-  EEPROM.write(addr, (i+1));
-
-}
-
-
-
-volatile long m = 0;
-void loop() { 
-m++;
-
-  for(int i=0;i<4;i++){
-    int nuevoEstadoPin = digitalRead(pines[i]);
-    if (estadoPines[i] != nuevoEstadoPin ){
-      antirebotes[i] = antirebotes[i] + 1;
-      if(antirebotes[i] > 150 ){
-        estadoPines[i] = nuevoEstadoPin;
-        antirebotes[i] = 0;
-      }
-    }else{
-        antirebotes[i]= 0;
-    }
-  }
-
-  int sum = estadoPines[0]*8+estadoPines[1]*4+estadoPines[2]*2+estadoPines[3];
-
-  switch(sum) {
-
-   case 15:
-      syncPhaseInc =0;
-      break;
-   case 7:
-      syncPhaseInc =notas[0];
-      break;
-   case 11:
-      syncPhaseInc =notas[1];
-      break;
-   case 13:
-      syncPhaseInc =notas[2];
-      break;
-   case 14:
-      syncPhaseInc =notas[3];
-      break;
-   case 3:
-      syncPhaseInc =notas[(m/200)%5];
-      break;
-   case 9:
-      syncPhaseInc =notas[4 - ((m/200)%5)];
-      break;
-   default :
-      syncPhaseInc =notas[(m/200)%5];
-  }
-
-  if(m%1000==0){
-    uint16_t ctrl = abs((m/100)%1000-500);
-  
-    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
-    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
-    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
-    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
-  
-    grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
-    grainDecay     = gDecayCtrl / 8; 
-    grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
-    grain2Decay     = g2DecayCtrl / 4; 
-  }
-  
-} 
-
-
-void setupTimer()
-{
-  // Set up PWM to 31.25kHz, phase accurate
-  TCCR2A = _BV(COM2B1) | _BV(WGM20);
-  TCCR2B = _BV(CS20);
-  TIMSK2 = _BV(TOIE2);
-
-  
-}
-
-
-SIGNAL(PWM_INTERRUPT)
-{
+ISR(TIMER0_COMPA_vect) {
   uint8_t value;
   uint16_t output;
 
@@ -189,6 +83,149 @@ SIGNAL(PWM_INTERRUPT)
   if (output > 255) output = 255;
 
   // Output to PWM (this is faster than using analogWrite) 
-  PWM_VALUE = output;
+
+  OCR1B = output;
+  //OCR1B = output & 0x80;
+    //m++;
+  //syncPhaseInc = notas[4 - ((m/2000)%5)];
+
+
 
 }
+
+void setup() {
+  // Enable 64 MHz PLL and use as source for Timer1
+  PLLCSR = 1<<PCKE | 1<<PLLE;     
+
+  // Set up Timer/Counter1 for PWM output
+  TIMSK = 0;                     // Timer interrupts OFF
+  TCCR1 = 1<<CS10;               // 1:1 prescale
+  GTCCR = 1<<PWM1B | 2<<COM1B0;  // PWM B, clear on match
+
+  pinMode(PWM_PIN,OUTPUT); // Enable PWM output pin
+
+  // Set up Timer/Counter0 for 20kHz interrupt to output samples.
+  TCCR0A = 3<<WGM00;             // Fast PWM
+  TCCR0B = 1<<WGM02 | 2<<CS00;   // 1/8 prescale
+  TIMSK = 1<<OCIE0A;             // Enable compare match, disable overflow
+  OCR0A = 49;                    // Divide by 400
+
+
+  //initPatch();
+  /*
+  for(int i=0;i<4;i++){
+    pinMode(pines[i], INPUT_PULLUP);
+  }
+  */
+    patchIndex = 0;
+
+    syncPhaseInc =notas[4];
+
+
+    uint16_t ctrl = 500;
+  
+    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
+    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
+    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
+    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
+  
+    grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
+    grainDecay     = gDecayCtrl / 8; 
+    grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
+    grain2Decay     = g2DecayCtrl / 4; 
+  
+}
+
+void initPatch(){
+  int addr = 0;
+
+  // read patchIndex from EEPROM
+  byte i = EEPROM.read(addr);
+  //ensure bounds
+  i %= PATCH_COUNT;
+  patchIndex = i;
+
+  //move to next patch for next run
+  EEPROM.write(addr, (i+1));
+
+}
+
+int m = 0;
+void loop() { 
+
+  m++;
+  if(m>=2)
+  {m=0;}
+  syncPhaseInc = notas[m];
+  delay(1000);
+}
+
+void loop_old() { 
+  m++;
+/*
+  for(int i=0;i<4;i++){
+    int nuevoEstadoPin = digitalRead(pines[i]);
+    if (estadoPines[i] != nuevoEstadoPin ){
+      antirebotes[i] = antirebotes[i] + 1;
+      if(antirebotes[i] > 150 ){
+        estadoPines[i] = nuevoEstadoPin;
+        antirebotes[i] = 0;
+      }
+    }else{
+        antirebotes[i]= 0;
+    }
+  }
+
+  int sum = estadoPines[0]*8+estadoPines[1]*4+estadoPines[2]*2+estadoPines[3];
+
+
+  switch(sum) {
+
+   case 15:
+      syncPhaseInc =0;
+      break;
+   case 7:
+      syncPhaseInc =notas[0];
+      break;
+   case 11:
+      syncPhaseInc =notas[1];
+      break;
+   case 13:
+      syncPhaseInc =notas[2];
+      break;
+   case 14:
+      syncPhaseInc =notas[3];
+      break;
+   case 3:
+      syncPhaseInc =notas[(m/200)%5];
+      break;
+   case 9:
+      syncPhaseInc =notas[4 - ((m/200)%5)];
+      break;
+   default :
+      syncPhaseInc =notas[(m/200)%5];
+  }
+*/
+
+
+  //syncPhaseInc =notas[4 - ((m/200)%5)];
+  syncPhaseInc =notas[2];
+
+  if(m%1000==0){
+    uint16_t ctrl = abs((m/100)%1000-500);
+  
+    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
+    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
+    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
+    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
+  
+    grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
+    grainDecay     = gDecayCtrl / 8; 
+    grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
+    grain2Decay     = g2DecayCtrl / 4; 
+  }
+  
+} 
+
+
+
