@@ -2,12 +2,16 @@
 #include <avr/interrupt.h> 
 #include <EEPROM.h>
 
-int pines[] = {1,2,3};
-int estadoPines[] = {1,1,1};
-int antirebotes[] = {0,0,0};
-int notas[] = {308,259,231,194,173,154,129,0}; //last index is silence
+int pines[] = {7,6,5,4};
+int estadoPines[] = {1,1,1,1};
+int antirebotes[] = {0,0,0,0};
+int notas[] = {173,194,231,259,308};
 
-#define PWM_PIN   0
+#define PWM_PIN       3
+#define PWM_VALUE     OCR2B
+#define PWM_INTERRUPT TIMER2_OVF_vect
+
+
 #define PATCH_COUNT 4
 byte patchIndex = 0;
 
@@ -45,13 +49,12 @@ int patches[PATCH_COUNT][4][2]={
   };
 
 void setup() { 
-  pinMode(2,OUTPUT); 
-  pinMode(1,OUTPUT); 
-  pinMode(PWM_PIN,OUTPUT); 
+  pinMode(PWM_PIN,OUTPUT);
+
   setupTimer();
   initPatch();
-  for(int i=0;i<3;i++){
-    //pinMode(pines[i], INPUT_PULLUP);
+  for(int i=0;i<4;i++){
+    pinMode(pines[i], INPUT_PULLUP);
   }
 
 } 
@@ -60,9 +63,6 @@ void setup() {
 
 void initPatch(){
   int addr = 0;
-
-  patchIndex = 1;
-  return;
 
   // read patchIndex from EEPROM
   byte i = EEPROM.read(addr);
@@ -79,9 +79,9 @@ void initPatch(){
 
 volatile long m = 0;
 void loop() { 
+m++;
 
-
-  for(int i=0;i<3;i++){
+  for(int i=0;i<4;i++){
     int nuevoEstadoPin = digitalRead(pines[i]);
     if (estadoPines[i] != nuevoEstadoPin ){
       antirebotes[i] = antirebotes[i] + 1;
@@ -94,101 +94,101 @@ void loop() {
     }
   }
 
-  int index = estadoPines[0]*4+estadoPines[1]*2+estadoPines[2];
-  syncPhaseInc =notas[index];
+  int sum = estadoPines[0]*8+estadoPines[1]*4+estadoPines[2]*2+estadoPines[3];
+
+  switch(sum) {
+
+   case 15:
+      syncPhaseInc =0;
+      break;
+   case 7:
+      syncPhaseInc =notas[0];
+      break;
+   case 11:
+      syncPhaseInc =notas[1];
+      break;
+   case 13:
+      syncPhaseInc =notas[2];
+      break;
+   case 14:
+      syncPhaseInc =notas[3];
+      break;
+   case 3:
+      syncPhaseInc =notas[(m/200)%5];
+      break;
+   case 9:
+      syncPhaseInc =notas[4 - ((m/200)%5)];
+      break;
+   default :
+      syncPhaseInc =notas[(m/200)%5];
+  }
+
+  if(m%1000==0){
+    uint16_t ctrl = abs((m/100)%1000-500);
   
-  uint16_t ctrl = analogRead(A2); 
-
-  syncPhaseInc =notas[abs((m/10000)%8)];
-  ctrl = abs((m/1000)%1000-500);
-
-
-  uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
-  uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
-  uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
-  uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
-
-  grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
-  grainDecay     = gDecayCtrl / 8; 
-  grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
-  grain2Decay     = g2DecayCtrl / 4; 
+    uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
+    uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
+    uint16_t g2FreqCtrl = map(ctrl,0,1023,patches[patchIndex][2][0],patches[patchIndex][2][1]); 
+    uint16_t g2DecayCtrl = map(ctrl,0,1023,patches[patchIndex][3][0],patches[patchIndex][3][1]); 
+  
+    grainPhaseInc  = mapPhaseInc(gFreqCtrl) / 2; 
+    grainDecay     = gDecayCtrl / 8; 
+    grain2PhaseInc = mapPhaseInc(g2FreqCtrl) / 2; 
+    grain2Decay     = g2DecayCtrl / 4; 
+  }
   
 } 
 
 
 void setupTimer()
 {
-  //_BV(CTC1) |  | _BV(CS13)
-  //TCCR1 =  _BV(PWM1A) | _BV(COM1A0) | _BV(COM1A1) | _BV(CS10);
-  //TIMSK |= _BV(TOIE1); 
-
-  // connect pwm to pin on timer 1, channel A
-  //TCCR0A |=_BV(COM0A1);
-  //TCCR0A &=~_BV(COM0A0);
-  //OCR0A =  120;
-
-  // connect pwm to pin on timer 1, channel A
-  //TCCR1 |=_BV(COM1A1);
-  //TCCR1 &=~_BV(COM1A0);
-  //OCR1A =  120;
-  analogWrite(1,120);
+  // Set up PWM to 31.25kHz, phase accurate
+  TCCR2A = _BV(COM2B1) | _BV(WGM20);
+  TCCR2B = _BV(CS20);
+  TIMSK2 = _BV(TOIE2);
 
   
 }
 
-/*
-volatile long l=0;
 
-// TIMER1 overflow interrupt service routine
-// called whenever TCNT1 overflows
-SIGNAL (TIMER1_OVF_vect)
+SIGNAL(PWM_INTERRUPT)
 {
-  uint8_t value; 
-  uint16_t output; 
+  uint8_t value;
+  uint16_t output;
 
+  syncPhaseAcc += syncPhaseInc;
+  if (syncPhaseAcc < syncPhaseInc) {
+    // Time to start the next grain
+    grainPhaseAcc = 0;
+    grainAmp = 0x7fff;
+    grain2PhaseAcc = 0;
+    grain2Amp = 0x7fff;
+  }
+ 
+  // Increment the phase of the grain oscillators
+  grainPhaseAcc += grainPhaseInc;
+  grain2PhaseAcc += grain2PhaseInc;
 
-    digitalWrite(2,(l/10000)%2);  
-    l++;
+  // Convert phase into a triangle wave
+  value = (grainPhaseAcc >> 7) & 0xff;
+  if (grainPhaseAcc & 0x8000) value = ~value;
+  // Multiply by current grain amplitude to get sample
+  output = value * (grainAmp >> 8);
 
-  syncPhaseAcc += syncPhaseInc; 
-  if (syncPhaseAcc < syncPhaseInc) { 
-    // Time to start the next grain 
-    grainPhaseAcc = 0; 
-    grainAmp = 0x7fff; 
-    grain2PhaseAcc = 0; 
-    grain2Amp = 0x7fff; 
+  // Repeat for second grain
+  value = (grain2PhaseAcc >> 7) & 0xff;
+  if (grain2PhaseAcc & 0x8000) value = ~value;
+  output += value * (grain2Amp >> 8);
 
-  } 
+  // Make the grain amplitudes decay by a factor every sample (exponential decay)
+  grainAmp -= (grainAmp >> 8) * grainDecay;
+  grain2Amp -= (grain2Amp >> 8) * grain2Decay;
 
-  // Increment the phase of the grain oscillators 
-  grainPhaseAcc += grainPhaseInc; 
-  grain2PhaseAcc += grain2PhaseInc; 
-
-  // Convert phase into a triangle wave 
-  value = (grainPhaseAcc >> 7) & 0xff; 
-  if (grainPhaseAcc & 0x8000) value = ~value; 
-  // Multiply by current grain amplitude to get sample 
-  output = value * (grainAmp >> 8); 
-
-  // Repeat for second grain 
-  value = (grain2PhaseAcc >> 7) & 0xff; 
-  if (grain2PhaseAcc & 0x8000) value = ~value; 
-  output += value * (grain2Amp >> 8); 
-
-  // Make the grain amplitudes decay by a factor every sample  (exponential decay) 
-  grainAmp -= (grainAmp >> 8) * grainDecay; 
-  grain2Amp -= (grain2Amp >> 8) * grain2Decay; 
-
-  // Scale output to the available range, clipping if necessary 
-  output >>= 9; 
-  if (output > 255) output = 255; 
+  // Scale output to the available range, clipping if necessary
+  output >>= 9;
+  if (output > 255) output = 255;
 
   // Output to PWM (this is faster than using analogWrite) 
-  OCR0A =  output;
+  PWM_VALUE = output;
 
-  
 }
-
-
-
-*/
