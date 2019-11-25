@@ -13,16 +13,16 @@ int notas[] = {173,194,231,259,308};
 byte patchIndex = 0;
 
 
-uint16_t syncPhaseAcc=0; 
-uint16_t syncPhaseInc=0; 
-uint16_t grainPhaseAcc=0; 
-uint16_t grainPhaseInc=0; 
-uint16_t grainAmp=0; 
-uint8_t grainDecay=0; 
-uint16_t grain2PhaseAcc=0; 
-uint16_t grain2PhaseInc=0; 
-uint16_t grain2Amp=0; 
-uint8_t grain2Decay=0; 
+uint16_t syncPhaseAcc; 
+uint16_t syncPhaseInc; 
+uint16_t grainPhaseAcc; 
+uint16_t grainPhaseInc; 
+uint16_t grainAmp; 
+uint8_t grainDecay; 
+uint16_t grain2PhaseAcc; 
+uint16_t grain2PhaseInc; 
+uint16_t grain2Amp; 
+uint8_t grain2Decay; 
 
 
 // Smooth logarithmic mapping 
@@ -44,6 +44,8 @@ int patches[PATCH_COUNT][4][2]={
     {{405,0},{25,25},{0,0},{342,342}}
   };
 
+uint8_t t=0;
+int m = 0;
 
 
 ISR(TIMER0_COMPA_vect) {
@@ -93,6 +95,44 @@ ISR(TIMER0_COMPA_vect) {
 
 }
 
+
+
+
+
+
+
+
+
+//Globals persist throughout tune
+unsigned int NextTick = 0;
+int TunePtr = 0;
+int Octave = 0, LastIndex = 0, Duration = 4;
+
+// Global tick counter
+volatile unsigned int GlobalTicks = 0;
+
+// Ticks timer
+unsigned int Ticks() {
+  unsigned long t;
+  uint8_t oldSREG = SREG;
+  cli();
+  t = GlobalTicks;
+  SREG = oldSREG;
+  return t;
+}
+
+// Watchdog interrupt counts ticks (1/8 sec)
+ISR(WDT_vect) {
+  WDTCR |= 1<<WDIE;
+  GlobalTicks++;
+  m++;
+  if(m>=4)
+  {m=0;}
+  syncPhaseInc = notas[m];
+
+}
+
+
 void setup() {
   // Enable 64 MHz PLL and use as source for Timer1
   PLLCSR = 1<<PCKE | 1<<PLLE;     
@@ -102,13 +142,17 @@ void setup() {
   TCCR1 = 1<<CS10;               // 1:1 prescale
   GTCCR = 1<<PWM1B | 2<<COM1B0;  // PWM B, clear on match
 
-  pinMode(PWM_PIN,OUTPUT); // Enable PWM output pin
+  OCR1B = 128;
+  pinMode(4, OUTPUT);            // Enable PWM output pin
 
   // Set up Timer/Counter0 for 20kHz interrupt to output samples.
   TCCR0A = 3<<WGM00;             // Fast PWM
   TCCR0B = 1<<WGM02 | 2<<CS00;   // 1/8 prescale
-  TIMSK = 1<<OCIE0A;             // Enable compare match, disable overflow
   OCR0A = 49;                    // Divide by 400
+  TIMSK = 1<<OCIE0A;             // Enable compare match, disable overflow
+ 
+  // Set up Watchdog timer for 8 Hz interrupt for ticks timer.
+  WDTCR = 1<<WDIE | 3<<WDP0;     // 8 Hz interrupt
 
 
   //initPatch();
@@ -122,7 +166,7 @@ void setup() {
     syncPhaseInc =notas[4];
 
 
-    uint16_t ctrl = 500;
+    uint16_t ctrl = 800;
   
     uint16_t gFreqCtrl = map(ctrl,0,1023,patches[patchIndex][0][0],patches[patchIndex][0][1]); 
     uint16_t gDecayCtrl= map(ctrl,0,1023,patches[patchIndex][1][0],patches[patchIndex][1][1]); 
@@ -150,14 +194,15 @@ void initPatch(){
 
 }
 
-int m = 0;
+
+
 void loop() { 
 
-  m++;
-  if(m>=2)
-  {m=0;}
-  syncPhaseInc = notas[m];
-  delay(1000);
+
+  TunePtr--;
+  NextTick = NextTick + Duration;
+  while (Ticks() < NextTick);
+  
 }
 
 void loop_old() { 
